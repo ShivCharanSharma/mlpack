@@ -4,7 +4,13 @@
  *
  * Get the default value of the parameter.  This depends on
  * BindingInfo::Language() to choose which language to return the type for.
+ *
+ * mlpack is free software; you may redistribute it and/or modify it under the
+ * terms of the 3-clause BSD license.  You should have received a copy of the
+ * 3-clause BSD license along with mlpack.  If not, see
+ * http://www.opensource.org/licenses/BSD-3-Clause for more information.
  */
+
 #ifndef MLPACK_BINDINGS_MARKDOWN_DEFAULT_PARAM_HPP
 #define MLPACK_BINDINGS_MARKDOWN_DEFAULT_PARAM_HPP
 
@@ -12,6 +18,7 @@
 
 #include <mlpack/bindings/cli/default_param.hpp>
 #include <mlpack/bindings/python/default_param.hpp>
+#include <mlpack/bindings/julia/default_param.hpp>
 
 namespace mlpack {
 namespace bindings {
@@ -35,6 +42,16 @@ void DefaultParam(const util::ParamData& data,
   {
     *((std::string*) output) =
         python::DefaultParamImpl<typename std::remove_pointer<T>::type>(data);
+  }
+  else if (BindingInfo::Language() == "julia")
+  {
+    *((std::string*) output) =
+        julia::DefaultParamImpl<typename std::remove_pointer<T>::type>(data);
+  }
+  else
+  {
+    throw std::invalid_argument("DefaultParam(): unknown "
+        "BindingInfo::Language() " + BindingInfo::Language() + "!");
   }
 }
 

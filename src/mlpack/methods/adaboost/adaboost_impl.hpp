@@ -56,8 +56,7 @@ AdaBoost<WeakLearnerType, MatType>::AdaBoost(
 template<typename WeakLearnerType, typename MatType>
 AdaBoost<WeakLearnerType, MatType>::AdaBoost(const double tolerance) :
     numClasses(0),
-    tolerance(tolerance),
-    ztProduct(1.0)
+    tolerance(tolerance)
 {
   // Nothing to do.
 }
@@ -83,7 +82,7 @@ double AdaBoost<WeakLearnerType, MatType>::Train(
   // changing by less than the tolerance.
   double rt, crt = 0.0, alphat = 0.0, zt;
 
-  ztProduct = 1.0;
+  double ztProduct = 1.0;
 
   // To be used for prediction by the weak learner.
   arma::Row<size_t> predictedLabels(labels.n_cols);
@@ -212,9 +211,23 @@ void AdaBoost<WeakLearnerType, MatType>::Classify(
     arma::Row<size_t>& predictedLabels)
 {
   arma::Row<size_t> tempPredictedLabels(test.n_cols);
-  arma::mat cMatrix(numClasses, test.n_cols);
+  arma::mat probabilities;
 
-  cMatrix.zeros();
+  Classify(test, predictedLabels, probabilities);
+}
+
+/**
+ * Classify the given test points.
+ */
+template<typename WeakLearnerType, typename MatType>
+void AdaBoost<WeakLearnerType, MatType>::Classify(
+    const MatType& test,
+    arma::Row<size_t>& predictedLabels,
+    arma::mat& probabilities)
+{
+  arma::Row<size_t> tempPredictedLabels(test.n_cols);
+
+  probabilities.zeros(numClasses, test.n_cols);
   predictedLabels.set_size(test.n_cols);
 
   for (size_t i = 0; i < wl.size(); i++)
@@ -222,16 +235,17 @@ void AdaBoost<WeakLearnerType, MatType>::Classify(
     wl[i].Classify(test, tempPredictedLabels);
 
     for (size_t j = 0; j < tempPredictedLabels.n_cols; j++)
-      cMatrix(tempPredictedLabels(j), j) += alpha[i];
+      probabilities(tempPredictedLabels(j), j) += alpha[i];
   }
 
-  arma::colvec cMRow;
+  arma::colvec pRow;
   arma::uword maxIndex = 0;
 
   for (size_t i = 0; i < predictedLabels.n_cols; i++)
   {
-    cMRow = cMatrix.unsafe_col(i);
-    cMRow.max(maxIndex);
+    probabilities.col(i) /= arma::accu(probabilities.col(i));
+    pRow = probabilities.unsafe_col(i);
+    pRow.max(maxIndex);
     predictedLabels(i) = maxIndex;
   }
 }
@@ -242,11 +256,16 @@ void AdaBoost<WeakLearnerType, MatType>::Classify(
 template<typename WeakLearnerType, typename MatType>
 template<typename Archive>
 void AdaBoost<WeakLearnerType, MatType>::serialize(Archive& ar,
-                                               const unsigned int /* version */)
+                                                   const unsigned int version)
 {
   ar & BOOST_SERIALIZATION_NVP(numClasses);
   ar & BOOST_SERIALIZATION_NVP(tolerance);
-  ar & BOOST_SERIALIZATION_NVP(ztProduct);
+  if (version == 0 && Archive::is_loading::value)
+  {
+    // Load unused ztProduct double and forget it.
+    double tmpZtProduct = 0.0;
+    ar & BOOST_SERIALIZATION_NVP(tmpZtProduct);
+  }
   ar & BOOST_SERIALIZATION_NVP(alpha);
 
   // Now serialize each weak learner.

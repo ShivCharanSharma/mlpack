@@ -1318,4 +1318,162 @@ BOOST_AUTO_TEST_CASE(MultiTimestepTest)
   BOOST_REQUIRE_LE(err, 0.025);
 }
 
+/**
+ * Test that RNN::Train() returns finite objective value.
+ */
+BOOST_AUTO_TEST_CASE(RNNTrainReturnObjective)
+{
+  const size_t rho = 10;
+
+  // Generate 12 (2 * 6) noisy sines. A single sine contains rho
+  // points/features.
+  arma::cube input;
+  arma::mat labelsTemp;
+  GenerateNoisySines(input, labelsTemp, rho, 6);
+
+  arma::cube labels = arma::zeros<arma::cube>(1, labelsTemp.n_cols, rho);
+  for (size_t i = 0; i < labelsTemp.n_cols; ++i)
+  {
+    const int value = arma::as_scalar(arma::find(
+        arma::max(labelsTemp.col(i)) == labelsTemp.col(i), 1)) + 1;
+    labels.tube(0, i).fill(value);
+  }
+
+  /**
+   * Construct a network with 1 input unit, 4 hidden units and 10 output
+   * units. The hidden layer is connected to itself. The network structure
+   * looks like:
+   *
+   *  Input         Hidden        Output
+   * Layer(1)      Layer(4)      Layer(10)
+   * +-----+       +-----+       +-----+
+   * |     |       |     |       |     |
+   * |     +------>|     +------>|     |
+   * |     |    ..>|     |       |     |
+   * +-----+    .  +--+--+       +-----+
+   *            .     .
+   *            .     .
+   *            .......
+   */
+  Add<> add(4);
+  Linear<> lookup(1, 4);
+  SigmoidLayer<> sigmoidLayer;
+  Linear<> linear(4, 4);
+  Recurrent<>* recurrent = new Recurrent<>(add, lookup, linear,
+      sigmoidLayer, rho);
+
+  RNN<> model(rho);
+  model.Add<IdentityLayer<> >();
+  model.Add(recurrent);
+  model.Add<Linear<> >(4, 10);
+  model.Add<LogSoftMax<> >();
+
+  StandardSGD opt(0.1, 1, input.n_cols /* 1 epoch */, -100);
+  double objVal = model.Train(input, labels, opt);
+
+  BOOST_REQUIRE_EQUAL(std::isfinite(objVal), true);
+}
+
+/**
+ * Test that BRNN::Train() returns finite objective value.
+ */
+BOOST_AUTO_TEST_CASE(BRNNTrainReturnObjective)
+{
+  const size_t rho = 10;
+
+  arma::cube input;
+  arma::mat labelsTemp;
+  GenerateNoisySines(input, labelsTemp, rho, 6);
+
+  arma::cube labels = arma::zeros<arma::cube>(1, labelsTemp.n_cols, rho);
+  for (size_t i = 0; i < labelsTemp.n_cols; ++i)
+  {
+    const int value = arma::as_scalar(arma::find(
+        arma::max(labelsTemp.col(i)) == labelsTemp.col(i), 1)) + 1;
+    labels.tube(0, i).fill(value);
+  }
+
+  Add<> add(4);
+  Linear<> lookup(1, 4);
+  SigmoidLayer<> sigmoidLayer;
+  Linear<> linear(4, 4);
+  Recurrent<>* recurrent = new Recurrent<>(
+      add, lookup, linear, sigmoidLayer, rho);
+
+  BRNN<> model(rho);
+  model.Add<IdentityLayer<> >();
+  model.Add(recurrent);
+  model.Add<Linear<> >(4, 5);
+
+  StandardSGD opt(0.1, 1, 500 * input.n_cols, -100);
+  double objVal = model.Train(input, labels, opt);
+  BOOST_TEST_CHECKPOINT("Training over");
+
+  // Test that BRNN::Train() returns finite objective value.
+  BOOST_REQUIRE_EQUAL(std::isfinite(objVal), true);
+}
+
+/**
+ * Test that RNN::Train() does not give an error for large rho.
+ */
+BOOST_AUTO_TEST_CASE(LargeRhoValueRnnTest)
+{
+  // Setting rho value greater than sequence length which is 17.
+  const size_t rho = 100;
+  const size_t hiddenSize = 128;
+  const size_t numLetters = 256;
+  using MatType = arma::cube;
+  std::vector<std::string>trainingData = { "THIS IS THE INPUT 0" ,
+                                           "THIS IS THE INPUT 1" ,
+                                           "THIS IS THE INPUT 3"};
+
+
+  RNN<> model(rho);
+  model.Add<IdentityLayer<>>();
+  model.Add<LSTM<>>(numLetters, hiddenSize, rho);
+  model.Add<Dropout<>>(0.1);
+  model.Add<Linear<>>(hiddenSize, numLetters);
+
+  const auto makeInput = [numLetters](const char *line) -> MatType
+  {
+    const auto strLen = strlen(line);
+    // Rows: number of dimensions.
+    // Cols: number of sequences/points.
+    // Slices: number of steps in sequences.
+    MatType result(numLetters, 1, strLen, arma::fill::zeros);
+    for (size_t i = 0; i < strLen; ++i)
+    {
+      result.at(static_cast<arma::uword>(line[i]), 0, i) = 1.0;
+    }
+    return result;
+  };
+
+  const auto makeTarget = [] (const char *line) -> MatType
+  {
+    const auto strLen = strlen(line);
+    // Responses for NegativeLogLikelihood should be
+    // non-one-hot-encoded class IDs (from 1 to num_classes).
+    MatType result(1, 1, strLen, arma::fill::zeros);
+    // The response is the *next* letter in the sequence.
+    for (size_t i = 0; i < strLen - 1; ++i)
+    {
+      result.at(0, 0, i) = static_cast<arma::uword>(line[i + 1]) + 1.0;
+    }
+    // The final response is empty, so we set it to class 0.
+    result.at(0, 0, strLen - 1) = 1.0;
+    return result;
+  };
+
+  std::vector<MatType> inputs(trainingData.size());
+  std::vector<MatType> targets(trainingData.size());
+  for (size_t i = 0; i < trainingData.size(); ++i)
+  {
+    inputs[i] = makeInput(trainingData[i].c_str());
+    targets[i] = makeTarget(trainingData[i].c_str());
+  }
+  ens::SGD<> opt(0.01, 1, 100);
+  double objVal = model.Train(inputs[0], targets[0], opt);
+  BOOST_TEST_CHECKPOINT("Training over");
+}
+
 BOOST_AUTO_TEST_SUITE_END();

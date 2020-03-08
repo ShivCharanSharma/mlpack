@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(DiscreteHMMGenerateTest)
   hmm2.Train(sequences, states);
 
   // Check that training gives the same result.
-  BOOST_REQUIRE_LT(arma::norm(hmm.Transition() - hmm2.Transition()), 0.01);
+  BOOST_REQUIRE_LT(arma::norm(hmm.Transition() - hmm2.Transition()), 0.02);
 
   for (size_t row = 0; row < 6; row++)
   {
@@ -502,7 +502,7 @@ BOOST_AUTO_TEST_CASE(DiscreteHMMGenerateTest)
     for (size_t col = 0; col < 4; col++)
     {
       BOOST_REQUIRE_SMALL(hmm.Emission()[col].Probability(obs) -
-          hmm2.Emission()[col].Probability(obs), 0.01);
+          hmm2.Emission()[col].Probability(obs), 0.02);
     }
   }
 }
@@ -1229,6 +1229,35 @@ BOOST_AUTO_TEST_CASE(DiscreteHMMLoadSaveTest)
           hmm2.Emission()[j].Probabilities()[i], 1e-3);
 }
 
+/**
+ * Test that HMM::Train() returns finite log-likelihood.
+ */
+BOOST_AUTO_TEST_CASE(HMMTrainReturnLogLikelihood)
+{
+  HMM<DiscreteDistribution> hmm(1, 2); // 1 state, 2 emissions.
+  // Randomize the emission matrix.
+  hmm.Emission()[0].Probabilities() = arma::randu<arma::vec>(2);
+  hmm.Emission()[0].Probabilities() /= accu(hmm.Emission()[0].Probabilities());
+
+  std::vector<arma::mat> observations;
+  observations.push_back("0 1 0 1 0 1 0 1 0 1 0 1");
+  observations.push_back("0 0 0 0 0 0 1 1 1 1 1 1");
+  observations.push_back("1 1 1 1 1 1 0 0 0 0 0 0");
+  observations.push_back("1 1 1 0 0 0 1 1 1 0 0 0");
+  observations.push_back("0 0 1 1 0 0 0 0 1 1 1 1");
+  observations.push_back("1 1 1 0 0 0 1 1 1 0 0 0");
+  observations.push_back("0 1 0 1 0 1 0 1 0 1 0 1");
+  observations.push_back("0 0 0 0 0 0 1 1 1 1 1 1");
+  observations.push_back("1 1 1 1 1 0 1 0 0 0 0 0");
+  observations.push_back("1 1 1 0 0 1 0 1 1 0 0 0");
+  observations.push_back("0 0 1 1 0 0 0 1 0 1 1 1");
+  observations.push_back("1 1 1 0 0 1 0 1 1 0 0 0");
+
+  double loglik = hmm.Train(observations);
+
+  BOOST_REQUIRE_EQUAL(std::isfinite(loglik), true);
+}
+
 /********************************************/
 /** DiagonalGMM Hidden Markov Models Tests **/
 /********************************************/
@@ -1381,7 +1410,8 @@ BOOST_AUTO_TEST_CASE(DiagonalGMMHMMOneGaussianOneStateTrainingTest)
   // Generate the ground truth values.
   arma::vec actualMean = arma::mean(observations[0], 1);
   arma::vec actualCovar = arma::diagvec(
-      arma::ccov(observations[0], 1 /* biased estimator */));
+      mlpack::math::ColumnCovariance(observations[0],
+      1 /* biased estimator */));
 
   // Check the model to see that it is correct.
   CheckMatrices(hmm.Emission()[0].Component(0).Mean(), actualMean);

@@ -10,7 +10,7 @@
  * http://www.opensource.org/licenses/BSD-3-Clause for more information.
  */
 #include "lin_alg.hpp"
-#include <mlpack/prereqs.hpp>
+#include <mlpack/core.hpp>
 #include <mlpack/core/math/random.hpp>
 
 using namespace mlpack;
@@ -60,7 +60,7 @@ void mlpack::math::WhitenUsingSVD(const arma::mat& x,
   arma::mat covX, u, v, invSMatrix, temp1;
   arma::vec sVector;
 
-  covX = ccov(x);
+  covX = mlpack::math::ColumnCovariance(x);
 
   svd(u, sVector, v, covX);
 
@@ -70,32 +70,6 @@ void mlpack::math::WhitenUsingSVD(const arma::mat& x,
 
   whiteningMatrix = v * invSMatrix * trans(u);
 
-  xWhitened = whiteningMatrix * x;
-}
-
-/**
- * Whitens a matrix using the eigendecomposition of the covariance matrix.
- * Whitening means the covariance matrix of the result is the identity matrix.
- */
-void mlpack::math::WhitenUsingEig(const arma::mat& x,
-                                  arma::mat& xWhitened,
-                                  arma::mat& whiteningMatrix)
-{
-  arma::mat diag, eigenvectors;
-  arma::vec eigenvalues;
-
-  // Get eigenvectors of covariance of input matrix.
-  eig_sym(eigenvalues, eigenvectors, ccov(x));
-
-  // Generate diagonal matrix using 1 / sqrt(eigenvalues) for each value.
-  VectorPower(eigenvalues, -0.5);
-  diag.zeros(eigenvalues.n_elem, eigenvalues.n_elem);
-  diag.diag() = eigenvalues;
-
-  // Our whitening matrix is diag(1 / sqrt(eigenvectors)) * eigenvalues.
-  whiteningMatrix = diag * trans(eigenvectors);
-
-  // Now apply the whitening matrix.
   xWhitened = whiteningMatrix * x;
 }
 
@@ -135,7 +109,7 @@ void mlpack::math::Orthogonalize(const arma::mat& x, arma::mat& W)
   // eigendecomposition of the matrix A.
   arma::mat eigenvalues, eigenvectors;
   arma::vec egval;
-  eig_sym(egval, eigenvectors, ccov(x));
+  eig_sym(egval, eigenvectors, mlpack::math::ColumnCovariance(x));
   VectorPower(egval, -0.5);
 
   eigenvalues.zeros(egval.n_elem, egval.n_elem);

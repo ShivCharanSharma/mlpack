@@ -35,8 +35,16 @@ GAN<Model, InitializationRuleType, Noise, PolicyType>::Evaluate(
     const size_t i,
     const size_t /* batchSize */)
 {
-  if (!reset)
+  if ((parameter.is_empty()))
+  {
     Reset();
+  }
+
+  if (!deterministic)
+  {
+    deterministic = true;
+    ResetDeterministic();
+  }
 
   currentInput = arma::mat(predictors.memptr() + (i * predictors.n_rows),
       predictors.n_rows, batchSize, false, false);
@@ -54,14 +62,14 @@ GAN<Model, InitializationRuleType, Noise, PolicyType>::Evaluate(
 
   arma::mat generatedData = boost::apply_visitor(outputParameterVisitor,
       generator.network.back());
-  discriminator.predictors.cols(numFunctions, numFunctions + batchSize - 1) =
+  predictors.cols(numFunctions, numFunctions + batchSize - 1) =
       generatedData;
-  discriminator.Forward(std::move(discriminator.predictors.cols(numFunctions,
+  discriminator.Forward(std::move(predictors.cols(numFunctions,
       numFunctions + batchSize - 1)));
-  discriminator.responses.cols(numFunctions, numFunctions + batchSize - 1) =
+  responses.cols(numFunctions, numFunctions + batchSize - 1) =
       -arma::ones(1, batchSize);
 
-  currentTarget = arma::mat(discriminator.responses.memptr() + numFunctions,
+  currentTarget = arma::mat(responses.memptr() + numFunctions,
       1, batchSize, false, false);
   res += discriminator.outputLayer.Forward(
       std::move(boost::apply_visitor(
@@ -70,9 +78,9 @@ GAN<Model, InitializationRuleType, Noise, PolicyType>::Evaluate(
 
   // Gradient Penalty is calculated here.
   double epsilon = math::Random();
-  discriminator.predictors.cols(numFunctions, numFunctions + batchSize - 1) =
+  predictors.cols(numFunctions, numFunctions + batchSize - 1) =
       (epsilon * currentInput) + ((1.0 - epsilon) * generatedData);
-  discriminator.responses.cols(numFunctions, numFunctions + batchSize - 1) =
+  responses.cols(numFunctions, numFunctions + batchSize - 1) =
       -arma::ones(1, batchSize);
   discriminator.Gradient(discriminator.parameter, numFunctions,
       normGradientDiscriminator, batchSize);
@@ -96,8 +104,10 @@ EvaluateWithGradient(const arma::mat& /* parameters */,
                      GradType& gradient,
                      const size_t /* batchSize */)
 {
-  if (!reset)
+  if (parameter.is_empty())
+  {
     Reset();
+  }
 
   if (gradient.is_empty())
   {
@@ -107,6 +117,12 @@ EvaluateWithGradient(const arma::mat& /* parameters */,
   }
   else
     gradient.zeros();
+
+  if (this->deterministic)
+  {
+    this->deterministic = false;
+    ResetDeterministic();
+  }
 
   if (noiseGradientDiscriminator.is_empty())
   {
@@ -139,15 +155,15 @@ EvaluateWithGradient(const arma::mat& /* parameters */,
 
   // Gradient Penalty is calculated here.
   double epsilon = math::Random();
-  discriminator.predictors.cols(numFunctions, numFunctions + batchSize - 1) =
+  predictors.cols(numFunctions, numFunctions + batchSize - 1) =
       (epsilon * currentInput) + ((1.0 - epsilon) * generatedData);
-  discriminator.responses.cols(numFunctions, numFunctions + batchSize - 1) =
+  responses.cols(numFunctions, numFunctions + batchSize - 1) =
       -arma::ones(1, batchSize);
   discriminator.Gradient(discriminator.parameter, numFunctions,
       normGradientDiscriminator, batchSize);
   res += lambda * std::pow(arma::norm(normGradientDiscriminator, 2) - 1, 2);
 
-  discriminator.predictors.cols(numFunctions, numFunctions + batchSize - 1) =
+  predictors.cols(numFunctions, numFunctions + batchSize - 1) =
       generatedData;
   res += discriminator.EvaluateWithGradient(discriminator.parameter,
       numFunctions, noiseGradientDiscriminator, batchSize);
@@ -157,7 +173,7 @@ EvaluateWithGradient(const arma::mat& /* parameters */,
   {
     // Minimize -D(G(noise)).
     // Pass the error from Discriminator to Generator.
-    discriminator.responses.cols(numFunctions, numFunctions + batchSize - 1) =
+    responses.cols(numFunctions, numFunctions + batchSize - 1) =
         arma::ones(1, batchSize);
     discriminator.Gradient(discriminator.parameter, numFunctions,
         noiseGradientDiscriminator, batchSize);
@@ -171,14 +187,7 @@ EvaluateWithGradient(const arma::mat& /* parameters */,
     gradientGenerator *= multiplier;
   }
 
-  counter++;
   currentBatch++;
-
-  // Revert the counter to zero, if the total dataset get's covered.
-  if (counter * batchSize >= numFunctions)
-  {
-    counter = 0;
-  }
 
   if (preTrainSize > 0)
   {
