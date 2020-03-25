@@ -29,7 +29,7 @@ LogCoshLoss<InputDataType, OutputDataType>::LogCoshLoss(const double a) :
 template<typename InputDataType, typename OutputDataType>
 template<typename InputType, typename TargetType>
 double LogCoshLoss<InputDataType, OutputDataType>::Forward(
-    const InputType&& input, const TargetType&& target)
+    const InputType& input, const TargetType& target)
 {
   return arma::accu(arma::log(arma::cosh(a * (target - input)))) / a;
 }
@@ -37,9 +37,9 @@ double LogCoshLoss<InputDataType, OutputDataType>::Forward(
 template<typename InputDataType, typename OutputDataType>
 template<typename InputType, typename TargetType, typename OutputType>
 void LogCoshLoss<InputDataType, OutputDataType>::Backward(
-    const InputType&& input,
-    const TargetType&& target,
-    OutputType&& output)
+    const InputType& input,
+    const TargetType& target,
+    OutputType& output)
 {
   output = arma::tanh(a * (target - input));
 }
@@ -47,10 +47,10 @@ void LogCoshLoss<InputDataType, OutputDataType>::Backward(
 template<typename InputDataType, typename OutputDataType>
 template<typename Archive>
 void LogCoshLoss<InputDataType, OutputDataType>::serialize(
-    Archive& /* ar */,
+    Archive& ar,
     const unsigned int /* version */)
 {
-  // Nothing to do here.
+  ar & BOOST_SERIALIZATION_NVP(a);
 }
 
 } // namespace ann
